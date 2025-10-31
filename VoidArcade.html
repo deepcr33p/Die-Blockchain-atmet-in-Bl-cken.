@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Neon Dodge — VoidArcade</title>
+  <style>
+    :root{
+      --bg:#0b0f14; --fg:#e9f1ff; --muted:#8aa1c8; --accent:#5eead4; --accent2:#a78bfa; --danger:#ff6b6b; --gold:#ffd166;
+    }
+    html,body{height:100%;margin:0;background:radial-gradient(1200px 1200px at 70% 20%, #141b23 0%, #0b0f14 60%, #06080c 100%);color:var(--fg);font:500 16px/1.4 system-ui, Segoe UI, Roboto, Helvetica, Arial}
+    *{box-sizing:border-box}
+    canvas{position:fixed;inset:0;display:block;width:100vw;height:100vh;}
+    .hud{position:fixed;inset:0;pointer-events:none}
+    .row{display:flex;gap:.75rem;align-items:center}
+    .top{display:flex;justify-content:space-between;align-items:flex-start;padding:12px 14px}
+    .pill{pointer-events:auto;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);background:linear-gradient(180deg,#0d1220aa,#06091499);border:1px solid #1f2a38;border-radius:999px;padding:8px 12px;box-shadow:0 6px 24px #0006}
+    .kbd{border:1px solid #304056;border-radius:6px;padding:2px 6px;color:var(--accent);font-weight:700;background:#0b1422}
+    .btn{pointer-events:auto;border:1px solid #28405a;background:#0b1422;border-radius:10px;padding:8px 12px;color:var(--fg);cursor:pointer;user-select:none;transition:transform .06s ease, background .2s}
+    .btn:hover{transform:translateY(-1px)}
+    .btn:active{transform:translateY(0)}
+    .tag{font-weight:700;letter-spacing:.5px;color:var(--muted)}
+    .bottom{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:flex-end;padding:10px}
+    .badge{border:1px solid #2a3a50;border-radius:10px;padding:6px 10px;background:#0b1422;backdrop-filter:blur(8px)}
+    .overlay{position:fixed;inset:0;display:grid;place-items:center;background:linear-gradient(180deg,#030509e6,#06080ee6);opacity:1;transition:opacity .25s ease}
+    .overlay.hide{opacity:0;pointer-events:none}
+    .card{width:min(640px,90vw);border:1px solid #1e2a40;border-radius:18px;background:linear-gradient(180deg,#0e1626,#0a0f1a);box-shadow:0 20px 80px #000a;overflow:hidden}
+    .card header{padding:18px 20px;border-bottom:1px solid #1c273a;background:linear-gradient(180deg,#0f172a,#0b1220)}
+    .card h1{margin:0;font:800 28px/1.1 ui-sans-serif}
+    .card h1 .accent{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+    .card .body{padding:18px 20px;color:#cbd5e1}
+    .card .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .card .grid > div{background:#0b1422;border:1px solid #22324a;border-radius:14px;padding:12px}
+    .title{font-weight:700;color:#9fb5d8;margin-bottom:6px}
+    .controls{display:flex;flex-wrap:wrap;gap:8px}
+    .controls .kbd{min-width:28px;text-align:center}
+    .startbar{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    .mono{font:600 14px ui-monospace, SFMono-Regular, Menlo}
+    .mobilePad{display:none}
+    @media (max-width:820px){
+      .card .grid{grid-template-columns:1fr}
+      .mobilePad{display:flex;gap:12px;justify-content:center;margin-top:12px}
+      .mobilePad .btn{padding:16px 18px;border-radius:12px}
+    }
+    /* Glow utilities */
+    .glow{filter:drop-shadow(0 0 12px #5eead466) drop-shadow(0 0 24px #5eead433)}
+    .dangerGlow{filter:drop-shadow(0 0 10px #ff6b6b66)}
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div class="hud">
+    <div class="top">
+      <div class="pill row">
+        <span class="tag">SCORE:</span>&nbsp;<span id="score" class="mono">0</span>
+        <span style="width:10px"></span>
+        <span class="tag">BEST:</span>&nbsp;<span id="best" class="mono">0</span>
+      </div>
+      <div class="row" style="gap:8px">
+        <button class="btn" id="muteBtn" title="Ton umschalten (M)">🔈 Ton</button>
+        <button class="btn" id="pauseBtn" title="Pause (P)">⏸️ Pause</button>
+        <button class="btn" id="helpBtn" title="Hilfe (?)">❔ Hilfe</button>
+      </div>
+    </div>
+    <div class="bottom">
+      <div class="badge">WASD/←→↑↓ bewegen • Halten = schneller</div>
+      <div class="badge">Sammle <span class="glow">◆ Orbs</span>, meide <span class="dangerGlow">■ Gefahren</span></div>
+    </div>
+  </div>
+
+  <!-- Start / Help Overlay -->
+  <div id="overlay" class="overlay">
+    <div class="card">
+      <header>
+        <h1><span class="accent">Neon Dodge</span> — VoidArcade</h1>
+      </header>
+      <div class="body">
+        <div class="grid">
+          <div>
+            <div class="title">Ziel</div>
+            Überlebe so lange wie möglich in einem endlosen Neonfeld. Sammle schimmernde Orbs für Punkte und meide rote Gefahren. Mit der Zeit wird es schneller.
+          </div>
+          <div>
+            <div class="title">Steuerung</div>
+            <div class="controls">
+              <span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span> oder <span class="kbd">↑</span><span class="kbd">←</span><span class="kbd">↓</span><span class="kbd">→</span>
+              <span class="kbd">P</span> Pause • <span class="kbd">M</span> Ton • <span class="kbd">R</span> Neustart
+            </div>
+            <div class="mobilePad">
+              <button class="btn" data-pad="left">◀︎</button>
+              <button class="btn" data-pad="up">▲</button>
+              <button class="btn" data-pad="down">▼</button>
+              <button class="btn" data-pad="right">▶︎</button>
+            </div>
+          </div>
+        </div>
+        <div class="startbar">
+          <button class="btn" id="startBtn">▶️ Start</button>
+          <button class="btn" id="resetBest">🏁 Bestzeit löschen</button>
+        </div>
+        <p class="mono" style="opacity:.8;margin-top:10px">Tipp: Kanten berühren ist okay – aber nicht die roten Blöcke! Orbs geben +25 Punkte und heilen leicht.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ===== Utility =====
+  const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+  const rand=(a,b)=>Math.random()*(b-a)+a;
+  const choose=a=>a[(Math.random()*a.length)|0];
+
+  // ===== Canvas Setup =====
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const DPR = Math.min(window.devicePixelRatio||1, 2);
+  function resize(){
+    canvas.width = Math.floor(window.innerWidth*DPR);
+    canvas.height = Math.floor(window.innerHeight*DPR);
+    canvas.style.width = '100vw';
+    canvas.style.height = '100vh';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ===== Game State =====
+  const state = {
+    running:false, paused:false, t:0, dt:0, last:0,
+    score:0, best: Number(localStorage.getItem('neon_best')||0),
+    health:100, level:1, speed:1,
+    particles:[], hazards:[], orbs:[],
+  };
+  const HUD={score:document.getElementById('score'), best:document.getElementById('best')};
+  HUD.best.textContent = state.best;
+
+  // ===== Player =====
+  const player = {
+    x: canvas.width/2, y: canvas.height/2, r: 12, vx:0, vy:0, max: 360, accel: 1600,
+    colorA:'#5eead4', colorB:'#a78bfa', invul:0
+  };
+
+  // ===== Input =====
+  const keys={};
+  window.addEventListener('keydown',e=>{ keys[e.key.toLowerCase()]=true; if(e.key==='p') togglePause(); if(e.key==='m') toggleMute(); if(e.key==='r') restart(); });
+  window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false;});
+  // Touch buttons
+  document.querySelectorAll('[data-pad]').forEach(btn=>{
+    const dir=btn.dataset.pad; let press=false;
+    const set=(v)=>{ press=v; if(v){ keys[dir]=true;} else { keys[dir]=false; } };
+    btn.addEventListener('pointerdown',()=>set(true));
+    btn.addEventListener('pointerup',()=>set(false));
+    btn.addEventListener('pointerleave',()=>set(false));
+  });
+
+  // ===== Audio (tiny sfx) =====
+  let AC, master, muted=true;
+  function setupAudio(){
+    if(AC) return; AC = new (window.AudioContext||window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = muted?0:0.3; master.connect(AC.destination);
+  }
+  function beep(freq=660, dur=0.08, type='sine'){
+    if(muted || !AC) return; const o=AC.createOscillator(); const g=AC.createGain();
+    o.type=type; o.frequency.value=freq; o.connect(g); g.connect(master);
+    g.gain.setValueAtTime(0.001, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.4, AC.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime+dur);
+    o.start(); o.stop(AC.currentTime+dur);
+  }
+  function toggleMute(){ muted=!muted; if(!AC) setupAudio(); if(master) master.gain.value = muted?0:0.3; document.getElementById('muteBtn').textContent = muted? '🔇 Stumm':'🔈 Ton'; }
+
+  // ===== UI Buttons =====
+  const overlay = document.getElementById('overlay');
+  document.getElementById('startBtn').onclick=()=>{ start(); };
+  document.getElementById('resetBest').onclick=()=>{ localStorage.removeItem('neon_best'); state.best=0; HUD.best.textContent='0'; beep(220,0.06,'square'); };
+  document.getElementById('pauseBtn').onclick=()=>togglePause();
+  document.getElementById('helpBtn').onclick=()=>{ overlay.classList.remove('hide'); state.paused=true; };
+  document.getElementById('muteBtn').onclick=()=>toggleMute();
+
+  function start(){
+    setupAudio(); muted=false; toggleMute(); // enable sound on gesture
+    overlay.classList.add('hide');
+    state.running=true; state.paused=false; state.score=0; state.health=100; state.level=1; state.speed=1;
+    state.hazards.length=0; state.orbs.length=0; state.particles.length=0;
+    player.x=canvas.width/2; player.y=canvas.height/2; player.vx=player.vy=0; player.invul=0;
+    state.last=performance.now();
+    requestAnimationFrame(loop);
+  }
+  function restart(){ overlay.classList.remove('hide'); state.running=false; state.paused=true; }
+  function togglePause(){ if(!state.running) return; state.paused=!state.paused; if(!state.paused){ state.last=performance.now(); requestAnimationFrame(loop);} }
+
+  // ===== Entities =====
+  function spawnHazard(){
+    const margin=24; const w=rand(14,30), h=rand(14,30);
+    // spawn at edges moving inward
+    const side = choose(['left','right','top','bottom']);
+    let x,y,vx,vy; const sp=rand(60,160)*state.speed;
+    if(side==='left'){ x=-w; y=rand(margin, canvas.height-margin); vx=sp; vy=rand(-40,40); }
+    if(side==='right'){ x=canvas.width+w; y=rand(margin, canvas.height-margin); vx=-sp; vy=rand(-40,40); }
+    if(side==='top'){ x=rand(margin, canvas.width-margin); y=-h; vx=rand(-40,40); vy=sp; }
+    if(side==='bottom'){ x=rand(margin, canvas.width-margin); y=canvas.height+h; vx=rand(-40,40); vy=-sp; }
+    state.hazards.push({x,y,w,h,vx,vy, life: rand(3,7)});
+  }
+  function spawnOrb(){
+    const r=10; const x=rand(r, canvas.width-r), y=rand(r, canvas.height-r);
+    state.orbs.push({x,y,r, t:0});
+  }
+
+  // ===== Particles =====
+  function burst(x,y,color){
+    for(let i=0;i<12;i++){
+      state.particles.push({x,y, vx:rand(-90,90), vy:rand(-90,90), a:1, r:rand(1,3), c:color});
+    }
+  }
+
+  // ===== Loop =====
+  function loop(now){
+    if(!state.running) return; if(state.paused){ draw(); return; }
+    state.dt = Math.min(0.033, (now - state.last)/1000); state.last = now; state.t += state.dt;
+
+    // difficulty ramp
+    state.speed = 1 + Math.min(2.5, state.t/40);
+    if(Math.random() < 0.02*state.speed) spawnHazard();
+    if(state.orbs.length<3 && Math.random()<0.02) spawnOrb();
+
+    // Input → acceleration
+    const ax = ((keys['a']||keys['arrowleft']||keys['left'])?-1:0) + ((keys['d']||keys['arrowright']||keys['right'])?1:0);
+    const ay = ((keys['w']||keys['arrowup']||keys['up'])?-1:0) + ((keys['s']||keys['arrowdown']||keys['down'])?1:0);
+    player.vx += ax*player.accel*state.dt; player.vy += ay*player.accel*state.dt;
+    // friction
+    player.vx *= 0.90; player.vy *= 0.90;
+    // cap speed
+    const sp=Math.hypot(player.vx,player.vy); if(sp>player.max){ player.vx*=player.max/sp; player.vy*=player.max/sp; }
+    // move
+    player.x = clamp(player.x + player.vx*state.dt, player.r, canvas.width-player.r);
+    player.y = clamp(player.y + player.vy*state.dt, player.r, canvas.height-player.r);
+    if(player.invul>0) player.invul -= state.dt;
+
+    // hazards update
+    for(let i=state.hazards.length-1;i>=0;i--){
+      const z=state.hazards[i]; z.x+=z.vx*state.dt; z.y+=z.vy*state.dt; z.life -= state.dt;
+      if(z.x<-50||z.x>canvas.width+50||z.y<-50||z.y>canvas.height+50||z.life<0){ state.hazards.splice(i,1); continue; }
+      // collision
+      const dx = Math.max(z.x - player.x, 0, player.x - (z.x+z.w));
+      const dy = Math.max(z.y - player.y, 0, player.y - (z.y+z.h));
+      if(dx*dx + dy*dy <= player.r*player.r && player.invul<=0){
+        state.health -= 24; player.invul=0.8; burst(player.x,player.y,'#ff6b6b'); beep(140,0.08,'sawtooth');
+        if(state.health<=0){
+          // game over
+          state.best = Math.max(state.best, Math.floor(state.score)); localStorage.setItem('neon_best', state.best);
+          HUD.best.textContent=state.best;
+          overlay.querySelector('.title')?.remove();
+          overlay.classList.remove('hide');
+          overlay.querySelector('.body').insertAdjacentHTML('afterbegin', `<div class="title">Game Over</div><div style="margin-bottom:8px">Score: <b>${Math.floor(state.score)}</b> • Best: <b>${state.best}</b></div>`);
+          beep(90,0.25,'triangle');
+          state.running=false; return;
+        }
+      }
+    }
+
+    // orbs update
+    for(let i=state.orbs.length-1;i>=0;i--){
+      const o=state.orbs[i]; o.t+=state.dt; const dx=player.x-o.x, dy=player.y-o.y;
+      if(dx*dx+dy*dy <= (player.r+o.r)*(player.r+o.r)){
+        state.orbs.splice(i,1); state.score += 25; state.health = Math.min(100, state.health+6);
+        burst(o.x,o.y,'#5eead4'); beep(740,0.06,'sine');
+      }
+    }
+
+    // particles
+    for(let i=state.particles.length-1;i>=0;i--){
+      const p=state.particles[i]; p.x+=p.vx*state.dt; p.y+=p.vy*state.dt; p.a-=1.3*state.dt; if(p.a<=0) state.particles.splice(i,1);
+    }
+
+    // scoring
+    state.score += 10*state.dt; HUD.score.textContent = Math.floor(state.score);
+
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ===== Rendering =====
+  function draw(){
+    // background grid + vignette
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // soft glow field
+    const g=ctx.createRadialGradient(player.x,player.y,10, player.x,player.y, 600);
+    g.addColorStop(0,'rgba(94,234,212,0.12)');
+    g.addColorStop(1,'rgba(10,15,22,0)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // starry grid
+    ctx.save(); ctx.globalAlpha=0.25; ctx.strokeStyle='#1a2a3d';
+    const step=48; ctx.beginPath();
+    for(let x= (Math.floor((-state.t*30)%step)); x<canvas.width; x+=step){ ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); }
+    for(let y= (Math.floor((-state.t*18)%step)); y<canvas.height; y+=step){ ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); }
+    ctx.stroke(); ctx.restore();
+
+    // hazards
+    for(const z of state.hazards){
+      ctx.save(); ctx.translate(z.x,z.y);
+      ctx.fillStyle='rgba(255,90,90,0.9)'; ctx.shadowColor='#ff6b6b'; ctx.shadowBlur=18; ctx.fillRect(0,0,z.w,z.h);
+      ctx.restore();
+    }
+
+    // orbs
+    for(const o of state.orbs){
+      ctx.save(); ctx.translate(o.x,o.y);
+      const pul = 1+Math.sin(o.t*6)*0.15; const rr=o.r*pul;
+      const rg=ctx.createRadialGradient(0,0,rr*0.2,0,0,rr);
+      rg.addColorStop(0,'#bffcee'); rg.addColorStop(1,'#5eead4');
+      ctx.fillStyle=rg; ctx.shadowColor='#5eead4'; ctx.shadowBlur=20; ctx.beginPath(); ctx.arc(0,0,rr,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+
+    // particles
+    for(const p of state.particles){
+      ctx.save(); ctx.globalAlpha=p.a; ctx.fillStyle=p.c; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); ctx.restore();
+    }
+
+    // player
+    ctx.save(); ctx.translate(player.x,player.y);
+    const blink = player.invul>0 && ((state.t*20|0)%2===0);
+    ctx.globalAlpha = blink?0.5:1;
+    const pg=ctx.createLinearGradient(-player.r,-player.r, player.r,player.r);
+    pg.addColorStop(0, player.colorA); pg.addColorStop(1, player.colorB);
+    ctx.fillStyle=pg; ctx.shadowColor='#82f7e7'; ctx.shadowBlur=18; ctx.beginPath(); ctx.arc(0,0,player.r,0,Math.PI*2); ctx.fill();
+    // health ring
+    ctx.lineWidth=3; ctx.strokeStyle = state.health>60? '#5eead4' : state.health>30? '#ffd166' : '#ff6b6b';
+    ctx.beginPath(); ctx.arc(0,0, player.r+6, -Math.PI/2, -Math.PI/2 + (Math.PI*2)*(state.health/100)); ctx.stroke();
+    ctx.restore();
+  }
+
+  // kick things off paused with overlay visible
+  draw();
+  </script>
+</body>
+</html>
